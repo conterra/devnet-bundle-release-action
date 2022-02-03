@@ -50,8 +50,9 @@ runs:
     - id: git
       name: Set GIT username and email
       run: |
-        git config --global user.email "${{ git_mail }}"
-        git config --global user.name "${{ git_user }}"
+        git config --global user.email "${{ inputs.git_mail }}"
+        git config --global user.name "${{ inputs.git_user }}"
+      shell: bash
     - id: create_settings_xml
       name: "Create settings.xml"
       uses: whelk-io/maven-settings-xml-action@v18
@@ -85,17 +86,17 @@ runs:
         servers: >
           [
             {
-              "id": "${{ nexus_id }}",
-              "username": "${{ nexus_user }}",
-              "password": "${{ nexus_user_pw }}"
+              "id": "${{ inputs.nexus_id }}",
+              "username": "${{ inputs.nexus_user }}",
+              "password": "${{ inputs.nexus_user_pw }}"
             }
           ]
         mirrors: >
           [
             {
-              "id": "${{ nexus_id }}",
+              "id": "${{ inputs.nexus_id }}",
               "mirrorOf": "central",
-              "url": "${{ nexus_url }}"
+              "url": "${{ inputs.nexus_url }}"
             }
           ]
     - id: cache-node
@@ -108,20 +109,24 @@ runs:
           ~/.m2/repository
         key: ${{ runner.os }}-node_modules-${{ hashFiles('**/package.json') }}
     - id: write_release_versions
-      name: Update versions to ${{ release_version }}
+      name: Update versions to ${{ inputs.release_version }}
       run: |
-        mvn validate -P write-release-versions -Dreplace.target.version=${{ release_version }}
-        mvn versions:set -DnewVersion=${{ release_version }} -DgenerateBackupPoms=false
-        mvn scm:checkin -DpushChanges=true -Dmessage="[update-version] to ${{ release_version }}" -Dscm.username=${{ git_user }} -Dscm.password=${{ release_token }}
+        mvn validate -P write-release-versions -Dreplace.target.version=${{ inputs.release_version }}
+        mvn versions:set -DnewVersion=${{ inputs.release_version }} -DgenerateBackupPoms=false
+        mvn scm:checkin -DpushChanges=true -Dmessage="[update-version] to ${{ inputs.release_version }}" -Dscm.username=${{ inputs.git_user }} -Dscm.password=${{ inputs.release_token }}
+      shell: bash
     - id: tests
       name: Run tests
       run: mvn prepare-package -Prun-js-tests,include-mapapps-deps
+      shell: bash
     - id: nexus_deployment
       name: Publish to Nexus
-      run: mvn deploy -Pcompress -Dmaven.test.skip.exec=true -Ddist.releases.id=${{ nexus_id }} -Ddist.releases.url=${{ nexus_url_release }} -Ddist.snapshots.id=${{ nexus_id }} -Ddist.snapshots.url=${{ nexus_url_snapshots }}
+      run: mvn deploy -Pcompress -Dmaven.test.skip.exec=true -Ddist.releases.id=${{ inputs.nexus_id }} -Ddist.releases.url=${{ inputs.nexus_url_release }} -Ddist.snapshots.id=${{ inputs.nexus_id }} -Ddist.snapshots.url=${{ inputs.nexus_url_snapshots }}
+      shell: bash
     - id: project_artifact_id
       name: Extract Maven project artifactId
       run: echo ::set-output name=artifactId::$(mvn -q -Dexec.executable=echo -Dexec.args='${project.artifactId}' --non-recursive exec:exec)
+      shell: bash
     - id: release
       name: Create GitHub release
       uses: ncipollo/release-action@v1
@@ -131,11 +136,12 @@ runs:
         bodyFile: "RELEASE.md"
         allowUpdates: true
         replacesArtifacts: true
-        tag: ${{ release_version }}
-        token: ${{ release_token }}
+        tag: ${{ inputs.release_version }}
+        token: ${{ inputs.release_token }}
     - id: write_dev_versions
-      name: Update versions to ${{ next_dev_version }}
+      name: Update versions to ${{ inputs.next_dev_version }}
       run: |
-        mvn validate -P write-release-versions -Dreplace.target.version=${{ next_dev_version }}
-        mvn versions:set -DnewVersion=${{ next_dev_version }} -DgenerateBackupPoms=false
-        mvn scm:checkin -DpushChanges=true -Dmessage="[update-version] to ${{ next_dev_version }}" -Dscm.username=${{ git_user }} -Dscm.password=${{ release_token }}
+        mvn validate -P write-release-versions -Dreplace.target.version=${{ inputs.next_dev_version }}
+        mvn versions:set -DnewVersion=${{ inputs.next_dev_version }} -DgenerateBackupPoms=false
+        mvn scm:checkin -DpushChanges=true -Dmessage="[update-version] to ${{ inputs.next_dev_version }}" -Dscm.username=${{ inputs.git_user }} -Dscm.password=${{ inputs.release_token }}
+      shell: bash
