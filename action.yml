@@ -156,12 +156,14 @@ runs:
         show-on-start: false
         card-layout-exit: complete
         timezone: "Europe/Berlin"
-        enable-view-status: false
+        enable-view-status-action: false
         view-status-action-text: "View Release Status"
+        enable-review-diffs-action: false
         review-diffs-action-text: "View Commits"
+        include-files: false
         custom-facts: |
           - name: Release Version
-            value: "${{ steps.release.outputs.id }}"
+            value: "${{ inputs.release_version }}"
         custom-actions: |
           - text: Show Release
             url: "${{ steps.release.outputs.html_url }}"
