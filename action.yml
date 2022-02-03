@@ -153,4 +153,15 @@ runs:
       with:
         github-token: ${{ inputs.release_token }}
         webhook-uri: ${{ inputs.ms_teams_webhook_uri }}
-
+        show-on-start: false
+        card-layout-exit: complete
+        timezone: "Europe/Berlin"
+        enable-view-status: false
+        view-status-action-text: "View Release Status"
+        review-diffs-action-text: "View Commits"
+        custom-facts: |
+          - name: Release Version
+            value: "${{ steps.release.outputs.id }}"
+        custom-actions: |
+          - text: Show Release
+            url: "${{ steps.release.outputs.html_url }}"
