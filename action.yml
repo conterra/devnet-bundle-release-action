@@ -35,6 +35,9 @@ inputs:
   next_dev_version:
     description: "Next Dev Version"
     required: true
+  ms_teams_webhook_uri:
+    description: "MS Teams Webhook URI"
+    required: true
 
 runs:
   using: "composite"
@@ -145,3 +148,9 @@ runs:
         mvn versions:set -DnewVersion=${{ inputs.next_dev_version }} -DgenerateBackupPoms=false
         mvn scm:checkin -DpushChanges=true -Dmessage="[update-version] to ${{ inputs.next_dev_version }}" -Dscm.username=${{ inputs.git_user }} -Dscm.password=${{ inputs.release_token }}
       shell: bash
+    - uses: toko-bifrost/ms-teams-deploy-card@master
+      if: always()
+      with:
+        github-token: ${{ inputs.release_token }}
+        webhook-uri: ${{ inputs.ms_teams_webhook_uri }}
+
