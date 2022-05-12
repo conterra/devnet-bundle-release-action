@@ -102,15 +102,6 @@ runs:
               "url": "${{ inputs.nexus_url }}"
             }
           ]
-    - id: cache-node
-      name: Cache node modules
-      uses: actions/cache@v2
-      with:
-        path: |
-          '**/node'
-          '**/node_modules'
-          ~/.m2/repository
-        key: ${{ runner.os }}-node_modules-${{ hashFiles('**/package.json') }}
     - id: write_release_versions
       name: Update versions to ${{ inputs.release_version }}
       run: |
