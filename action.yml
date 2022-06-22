@@ -113,6 +113,10 @@ runs:
       name: Run tests
       run: mvn prepare-package -Prun-js-tests,include-mapapps-deps
       shell: bash
+    - id: clean
+      name: Clean
+      run: mvn clean
+      shell: bash
     - id: nexus_deployment
       name: Publish to Nexus
       run: mvn deploy -Pcompress -Dmaven.test.skip.exec=true -Ddist.releases.id=${{ inputs.nexus_id }} -Ddist.releases.url=${{ inputs.nexus_url_release }} -Ddist.snapshots.id=${{ inputs.nexus_id }} -Ddist.snapshots.url=${{ inputs.nexus_url_snapshots }}
