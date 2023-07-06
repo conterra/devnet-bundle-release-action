@@ -38,6 +38,15 @@ inputs:
   ms_teams_webhook_uri:
     description: "MS Teams Webhook URI"
     required: true
+  demo_user:
+    description: "Demo User"
+    required: true
+  demo_user_pw:
+    description: "Demo User PW"
+    required: true
+  demo_url:
+    description: "Demo URL"
+    required: true
 
 runs:
   using: "composite"
@@ -121,6 +130,10 @@ runs:
     - id: tests
       name: Run tests
       run: mvn prepare-package -B -ntp -Prun-js-tests,include-mapapps-deps
+      shell: bash
+    - id: upload_demo
+      name: Upload to demo
+      run: mvn package -Pcompress,upload -Dmapapps.remote.base=${{ inputs.demo_url }} -Dmapapps.user=${{ inputs.demo_user }} -Dmapapps.pw=${{ inputs.demo_user_pw }}
       shell: bash
     - id: nexus_deployment
       name: Publish to Nexus
