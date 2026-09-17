@@ -24,20 +24,17 @@ inputs:
     description: "Release Token"
     required: true
   git_mail:
-    description: "Release Version"
+    description: "Git commit author email"
     required: true
   git_user:
-    description: "Next Dev Version"
+    description: "Git commit author name"
     required: true
   release_version:
     description: "Release Version"
     required: true
   next_dev_version:
     description: "Next Dev Version"
-    required: true
-  ms_teams_webhook_uri:
-    description: "MS Teams Webhook URI"
-    required: true
+    required: false
   demo_user:
     description: "Demo User"
     required: true
@@ -47,27 +44,52 @@ inputs:
   demo_url:
     description: "Demo URL"
     required: true
+  run_js_tests:
+    description: "Run JS unit tests and publish results"
+    required: false
+    default: "true"
+  run_end_to_end_tests:
+    description: "Run Playwright e2e tests and publish results"
+    required: false
+    default: "false"
 
 runs:
   using: "composite"
   steps:
     - id: checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
+    - id: cache-env
+      name: Set browser caches into node_modules
+      run: |
+        echo "PUPPETEER_CACHE_DIR=${{ github.workspace }}/node_modules/.puppeteercache" >> "$GITHUB_ENV"
+        echo "PLAYWRIGHT_BROWSERS_PATH=${{ github.workspace }}/node_modules/.playwrightcache" >> "$GITHUB_ENV"
+      shell: bash
+    - id: cache-maven
+      name: Cache Maven repository
+      uses: actions/cache@v6
+      with:
+        path: ~/.m2/repository
+        key: maven-v1-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          maven-v1-${{ runner.os }}-
+          maven-v1-
     - id: cache-node
-      name: Cache node modules
-      uses: actions/cache@v3
+      name: Cache node_modules
+      uses: actions/cache@v6
       with:
         path: |
-          '**/node'
-          '**/node_modules'
-          ~/.m2/repository
-        key: ${{ runner.os }}-node_modules-${{ hashFiles('**/package.json') }}
+          **/node_modules
+          **/node
+        key: npm-v1-${{ runner.os }}-${{ hashFiles('**/package.json', '**/pnpm-lock.yaml', '**/package-lock.json') }}
+        restore-keys: |
+          npm-v1-${{ runner.os }}-
+          npm-v1-
     - id: setup
       name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         java-version: '17'
-        distribution: 'adopt'
+        distribution: 'temurin'
     - id: git
       name: Set GIT username and email
       run: |
@@ -76,8 +98,9 @@ runs:
       shell: bash
     - id: create_settings_xml
       name: "Create settings.xml"
-      uses: whelk-io/maven-settings-xml-action@v21
+      uses: s4u/maven-settings-action@v4
       with:
+        githubServer: false
         repositories: >
           [
             {
@@ -91,7 +114,7 @@ runs:
               }
             }
           ]
-        plugin_repositories: >
+        pluginRepositories: >
           [
             {
               "id": "central",
@@ -122,15 +145,51 @@ runs:
           ]
     - id: write_release_versions
       name: Update versions to ${{ inputs.release_version }}
+      env:
+        RELEASE_VERSION: ${{ inputs.release_version }}
+        GIT_USER: ${{ inputs.git_user }}
+        RELEASE_TOKEN: ${{ inputs.release_token }}
       run: |
-        mvn validate -B -ntp -P write-release-versions -Dreplace.target.version=${{ inputs.release_version }}
-        mvn versions:set -B -ntp -DnewVersion=${{ inputs.release_version }} -DgenerateBackupPoms=false
-        mvn scm:checkin -B -ntp -DpushChanges=true -Dmessage="[update-version] to ${{ inputs.release_version }}" -Dscm.username=${{ inputs.git_user }} -Dscm.password=${{ inputs.release_token }}
+        set -euo pipefail
+        mvn validate -B -ntp -P write-release-versions -Dreplace.target.version="${RELEASE_VERSION}"
+        mvn versions:set -B -ntp -DnewVersion="${RELEASE_VERSION}" -DgenerateBackupPoms=false
+        mvn scm:checkin -B -ntp -DpushChanges=true -Dmessage="[update-version] to ${RELEASE_VERSION}" -Dscm.username="${GIT_USER}" -Dscm.password="${RELEASE_TOKEN}"
       shell: bash
-    - id: tests
-      name: Run tests
-      run: mvn prepare-package -B -ntp -Prun-js-tests,include-mapapps-deps
+    - id: build
+      name: Build
+      run: mvn prepare-package -B -ntp -Pinclude-mapapps-deps
       shell: bash
+    - id: js_tests
+      name: Run JS tests
+      if: ${{ inputs.run_js_tests == 'true' }}
+      run: mvn test -B -ntp -P include-mapapps-deps,run-js-tests -Dbuild.stage=test
+      shell: bash
+    - name: Publish JS test results
+      if: ${{ always() && inputs.run_js_tests == 'true' }}
+      uses: mikepenz/action-junit-report@v6
+      with:
+        report_paths: 'target/webapp/js/JS-TEST-REPORT-*.xml'
+        check_name: 'JS Unit Tests'
+    - id: e2e
+      name: Run end-to-end tests
+      if: ${{ inputs.run_end_to_end_tests == 'true' }}
+      run: mvn test -B -ntp -P include-mapapps-deps,run-end-to-end-tests -Dbuild.stage=test
+      shell: bash
+      env:
+        UPDATE_SNAPSHOTS: "false"
+    - name: Publish e2e test results
+      if: ${{ always() && inputs.run_end_to_end_tests == 'true' }}
+      uses: mikepenz/action-junit-report@v6
+      with:
+        report_paths: 'target/end-to-end/junit.xml'
+        check_name: 'End-to-end Tests'
+    - name: Upload e2e artifacts
+      if: ${{ always() && inputs.run_end_to_end_tests == 'true' }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: e2e-results
+        path: target/end-to-end
+        if-no-files-found: ignore
     - id: upload_demo
       name: Upload to demo
       run: mvn clean package -Pcompress,upload -Dmapapps.remote.base=${{ inputs.demo_url }} -Dmapapps.user=${{ inputs.demo_user }} -Dmapapps.pw=${{ inputs.demo_user_pw }}
@@ -141,7 +200,9 @@ runs:
       shell: bash
     - id: project_artifact_id
       name: Extract Maven project artifactId
-      run: echo ::set-output name=artifactId::$(mvn -q -Dexec.executable=echo -Dexec.args='${project.artifactId}' --non-recursive exec:exec)
+      run: |
+        ARTIFACT_ID=$(mvn -q -Dexec.executable=echo -Dexec.args='${project.artifactId}' --non-recursive exec:exec)
+        echo "artifactId=${ARTIFACT_ID}" >> "$GITHUB_OUTPUT"
       shell: bash
     - id: release
       name: Create GitHub release
@@ -155,28 +216,26 @@ runs:
         tag: ${{ inputs.release_version }}
         token: ${{ inputs.release_token }}
     - id: write_dev_versions
-      name: Update versions to ${{ inputs.next_dev_version }}
+      name: Update versions to next dev version
+      env:
+        NEXT_DEV_VERSION_INPUT: ${{ inputs.next_dev_version }}
+        RELEASE_VERSION: ${{ inputs.release_version }}
+        GIT_USER: ${{ inputs.git_user }}
+        RELEASE_TOKEN: ${{ inputs.release_token }}
       run: |
-        mvn validate -B -ntp -P write-release-versions -Dreplace.target.version=${{ inputs.next_dev_version }}
-        mvn versions:set -B -ntp -DnewVersion=${{ inputs.next_dev_version }} -DgenerateBackupPoms=false
-        mvn scm:checkin -B -ntp -DpushChanges=true -Dmessage="[update-version] to ${{ inputs.next_dev_version }}" -Dscm.username=${{ inputs.git_user }} -Dscm.password=${{ inputs.release_token }}
+        set -euo pipefail
+        NEXT_DEV_VERSION="${NEXT_DEV_VERSION_INPUT}"
+        if [ -z "${NEXT_DEV_VERSION}" ]; then
+          BASE="${RELEASE_VERSION%%-*}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${BASE}"
+          if ! [[ "${MAJOR}" =~ ^[0-9]+$ && "${MINOR}" =~ ^[0-9]+$ && "${PATCH}" =~ ^[0-9]+$ ]]; then
+            echo "::error::Cannot auto-compute next dev version from non-semver release_version '${RELEASE_VERSION}'. Pass next_dev_version explicitly."
+            exit 1
+          fi
+          NEXT_DEV_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))-SNAPSHOT"
+        fi
+        echo "Next dev version: ${NEXT_DEV_VERSION}"
+        mvn validate -B -ntp -P write-release-versions -Dreplace.target.version="${NEXT_DEV_VERSION}"
+        mvn versions:set -B -ntp -DnewVersion="${NEXT_DEV_VERSION}" -DgenerateBackupPoms=false
+        mvn scm:checkin -B -ntp -DpushChanges=true -Dmessage="[update-version] to ${NEXT_DEV_VERSION}" -Dscm.username="${GIT_USER}" -Dscm.password="${RELEASE_TOKEN}"
       shell: bash
-    - uses: toko-bifrost/ms-teams-deploy-card@master
-      if: always()
-      with:
-        github-token: ${{ inputs.release_token }}
-        webhook-uri: ${{ inputs.ms_teams_webhook_uri }}
-        show-on-start: false
-        card-layout-exit: complete
-        timezone: "Europe/Berlin"
-        enable-view-status-action: false
-        view-status-action-text: "View Release Status"
-        enable-review-diffs-action: false
-        review-diffs-action-text: "View Commits"
-        include-files: false
-        custom-facts: |
-          - name: Release Version
-            value: "${{ inputs.release_version }}"
-        custom-actions: |
-          - text: Show Release
-            url: "${{ steps.release.outputs.html_url }}"
