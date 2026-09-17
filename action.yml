@@ -98,7 +98,7 @@ runs:
       shell: bash
     - id: create_settings_xml
       name: "Create settings.xml"
-      uses: s4u/maven-settings-action@v4
+      uses: s4u/maven-settings-action@v4.0.0
       with:
         githubServer: false
         repositories: >
@@ -139,6 +139,7 @@ runs:
           [
             {
               "id": "${{ inputs.nexus_id }}",
+              "name": "${{ inputs.nexus_id }}",
               "mirrorOf": "central",
               "url": "${{ inputs.nexus_url }}"
             }
