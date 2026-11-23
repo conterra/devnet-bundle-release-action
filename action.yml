@@ -52,6 +52,10 @@ inputs:
     description: "Run Playwright e2e tests and publish results"
     required: false
     default: "false"
+  generate_sbom:
+    description: "Generate a CycloneDX SBOM"
+    required: false
+    default: "false"
 
 runs:
   using: "composite"
@@ -197,7 +201,15 @@ runs:
       shell: bash
     - id: nexus_deployment
       name: Publish to Nexus
-      run: mvn clean deploy -X -U -B -ntp -Pcompress -Dmaven.test.skip.exec=true -Ddist.releases.id=${{ inputs.nexus_id }} -Ddist.releases.url=${{ inputs.nexus_url_release }} -Ddist.snapshots.id=${{ inputs.nexus_id }} -Ddist.snapshots.url=${{ inputs.nexus_url_snapshots }}
+      env:
+        GENERATE_SBOM: ${{ inputs.generate_sbom }}
+      run: |
+        set -euo pipefail
+        PROFILES=compress
+        if [ "${GENERATE_SBOM}" = "true" ]; then
+          PROFILES="${PROFILES},generate-sbom"
+        fi
+        mvn clean deploy -X -U -B -ntp -P"${PROFILES}" -Dmaven.test.skip.exec=true -Ddist.releases.id=${{ inputs.nexus_id }} -Ddist.releases.url=${{ inputs.nexus_url_release }} -Ddist.snapshots.id=${{ inputs.nexus_id }} -Ddist.snapshots.url=${{ inputs.nexus_url_snapshots }}
       shell: bash
     - id: project_artifact_id
       name: Extract Maven project artifactId
@@ -209,7 +221,8 @@ runs:
       name: Create GitHub release
       uses: ncipollo/release-action@v1
       with:
-        artifacts: "target/${{ steps.project_artifact_id.outputs.artifactId }}-bundle.zip,target/${{ steps.project_artifact_id.outputs.artifactId }}-sample-app.zip"
+        # the SBOM only exists if generate_sbom is set; missing files are skipped with a warning
+        artifacts: "target/${{ steps.project_artifact_id.outputs.artifactId }}-bundle.zip,target/${{ steps.project_artifact_id.outputs.artifactId }}-sample-app.zip,target/${{ steps.project_artifact_id.outputs.artifactId }}-sbom.cdx.json"
         preRelease: false
         bodyFile: "RELEASE.md"
         allowUpdates: true
